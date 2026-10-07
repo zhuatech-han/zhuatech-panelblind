@@ -1,4 +1,6 @@
-# PanelBlind · 知华产品盲评与评分闭环
+[中文](README.md) | [English](README.en.md)
+
+# PanelBlind · 知华产品盲评与评分闭环系统
 
 ![知华科技 LOGO](frontend/public/brand/logo.jpg)
 
@@ -75,12 +77,12 @@
 
 | 登录与评分员 | 方案与盲码 |
 |---|---|
-| ![登录](docs/screenshots/login.jpg) | ![评分员工作台](docs/screenshots/rater-home.jpg) |
-| ![方案与量表](docs/screenshots/plan.jpg) | ![盲码评分单](docs/screenshots/blind-ratings.jpg) |
-| ![解盲结果](docs/screenshots/unblinded.jpg) | ![账号管理](docs/screenshots/users.jpg) |
-| ![角色权限](docs/screenshots/roles.jpg) | ![盲评统计](docs/screenshots/dashboard.jpg) |
-| ![系统参数](docs/screenshots/settings.jpg) | ![英文界面](docs/screenshots/english.jpg) |
-| ![手机界面](docs/screenshots/mobile.jpg) | |
+| ![登录](docs/screenshots/login.jpg)<br>**登录**：通过会话认证进入工作空间。 | ![评分员工作台](docs/screenshots/rater-home.jpg)<br>**评分员工作台**：查看本人被分配的方案和评分单。 |
+| ![方案与量表](docs/screenshots/plan.jpg)<br>**方案与量表**：维护未冻结的定义、范围和评分锚点。 | ![盲码评分单](docs/screenshots/blind-ratings.jpg)<br>**盲码评分**：按呈现序填写整数分数或明确缺测。 |
+| ![解盲结果](docs/screenshots/unblinded.jpg)<br>**解盲结果**：查看冻结后的有效数量、均值及范围。 | ![账号管理](docs/screenshots/users.jpg)<br>**账号管理**：维护账号、部门及启用状态。 |
+| ![角色权限](docs/screenshots/roles.jpg)<br>**角色权限**：配置接口权限与数据范围。 | ![盲评统计](docs/screenshots/dashboard.jpg)<br>**统计**：查看授权范围内的实际流程进度。 |
+| ![系统参数](docs/screenshots/settings.jpg)<br>**系统参数**：维护支持调整的工作空间设置。 | ![英文界面](docs/screenshots/english.jpg)<br>**英文界面**：查看英文操作页面。 |
+| ![手机界面](docs/screenshots/mobile.jpg)<br>**手机界面**：在窄屏布局中查看和操作评分流程。 | |
 
 ## 技术与工程
 
@@ -139,8 +141,11 @@ docker compose up --build -d --wait
 # 为进程设置DATABASE_URL、DATABASE_USER、DATABASE_CATALOG、DATABASE_PASSWORD和ADMIN_PASSWORD
 cd backend
 mvn spring-boot:run
+```
 
-# 前端：另一个终端，Node24.19.0 / npm11
+前端使用另一个终端，在项目根目录执行；需要Node24.19.0 / npm11：
+
+```bash
 cd frontend
 npm ci
 npm run dev
@@ -155,6 +160,7 @@ Vite默认回环开发端口，`/api`与`/actuator`代理到127.0.0.1:8080。前
 软件启动时由Flyway执行版本迁移，已有迁移不得修改，升级新增版本。初始化只在账号表为空时执行；重启不会清空或重建业务。升级前保留数据库备份，在独立环境验证迁移与恢复。
 
 ```bash
+umask 077
 mkdir -p private-backups
 chmod 700 private-backups
 docker compose exec -T mysql sh -c 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --no-tablespaces --set-gtid-purged=OFF "$MYSQL_DATABASE"' > private-backups/panelblind.sql
@@ -181,6 +187,7 @@ chmod 600 private-backups/panelblind.sql
 # 后端测试使用H2与真实Flyway/JPA；生成独立测试口令
 export TEST_ADMIN_PASSWORD="Aa9$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
 mvn -B -f backend/pom.xml spotless:check test package
+unset TEST_ADMIN_PASSWORD
 
 # 前端
 cd frontend
@@ -192,13 +199,16 @@ npm run build
 cd ..
 
 # 完整隔离部署
-python3 scripts/init-env.py  # 仅在无.env时
+if [ ! -f .env ]; then python3 scripts/init-env.py; fi
 docker compose -p panelblind-check config --quiet
 docker compose -p panelblind-check build
 docker compose -p panelblind-check up -d --wait
 python3 scripts/smoke.py --allow-test-writes
 python3 scripts/smoke.py --capture
-docker compose -p panelblind-check restart
+docker compose -p panelblind-check restart backend
+docker compose -p panelblind-check up -d --wait backend
+docker compose -p panelblind-check restart frontend
+docker compose -p panelblind-check up -d --wait
 python3 scripts/smoke.py --verify
 python3 scripts/release-check.py
 git diff --check
@@ -207,6 +217,10 @@ git diff --check
 `--allow-test-writes`只用于本机隔离空库，创建明显标记TEST的岗位和数据，不用于真实业务实例。QA随机账号记录在忽略的`output/qa-state.json`（0600），不在源码中预置。`--capture`在页面操作后重新记录稳定响应，`--verify`只读比较重启或独立恢复的一致性。恢复实例通过`TEST_URL`配置，例如回环18131。
 
 后端测试覆盖位置次数和盲码唯一性、完整业务、混合管理员评分隔离、映射授权、密封读取、缺测、退回、冻结、中止、版本并发、幂等与删除重试、导出和迁移。前端测试覆盖岗位动作、收悉、缺测null、有限载荷和同源错误处理。实际MySQL、截图和完整恢复应在隔离部署中另行执行，单元测试不能代替部署验收。
+
+`TEST_ADMIN_PASSWORD`仅供后端测试使用，临时随机生成，不是运行实例的管理员口令；不要写入源码或使用真实业务账号口令。
+
+重启核对时先等待后端健康，再重启前端，使代理重新解析项目内服务地址；全部服务健康后再运行`--verify`。
 
 ## 常见问题
 
@@ -232,6 +246,8 @@ git diff --check
 - 官网：[https://www.zhuatech.cn/](https://www.zhuatech.cn/)
 - 商业授权、定制开发、部署与系统集成咨询微信：**zhuatech**、**zhuatech2**。
 - 服务：企业信息化、AI应用定制、私有化部署、源码二次开发与系统集成。
+
+商业授权或深度定制开发请联系知华科技。
 
 | 微信 zhuatech | 微信 zhuatech2 |
 |---|---|
